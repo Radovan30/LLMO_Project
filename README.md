@@ -9,6 +9,7 @@ Tento projekt implementuje **Transformer modely** v TensorFlow pro **učení sek
   - `PositionalEncoding`: Implementuje poziční kódování pro zachování pořadí sekvence.
   - `TransformerBlock`: Multi-head attention + feedforward síť s normalizací.
 - **Interaktivní uživatelské rozhraní** v konzoli:
+  - Funguje v rozmezí čísel (od `0` do `100`).  
   - Výběr modelu (`repeat` nebo `sort`).
   - Zadání vstupní sekvence (`10 čísel` oddělených mezerou).
   - Model provede predikci a zobrazí výsledek.
