@@ -9,6 +9,9 @@ from tensorflow.keras.models import Model
 NUM_SAMPLES = 50000
 SEQUENCE_LENGTH = 10
 VOCAB_MAX = 101  # Čísla 0-100
+TRAIN_RATIO = 0.8 # Treninková data 80%
+VAL_RATIO = 0.1  # Validační data 10%
+TEST_RATIO = 0.1 # Testovací data 10%
 
 # Funkce pro generování datasetu
 def generate_data(sample_count=NUM_SAMPLES, sequence_length=SEQUENCE_LENGTH, task="repeat", vocab_max=VOCAB_MAX):
@@ -17,23 +20,54 @@ def generate_data(sample_count=NUM_SAMPLES, sequence_length=SEQUENCE_LENGTH, tas
         seq = np.random.randint(0, vocab_max, sequence_length)
         x.append(seq)
         if task == "repeat":
-            y.append(seq)  # Cílová sekvence je stejná jako vstupní
+            y.append(seq.copy())  # Cílová sekvence je stejná jako vstupní
         elif task == "sort":
             y.append(np.sort(seq))  # Cílová sekvence je setříděná verze
+        else:
+            raise ValueError(f"Neznámá úloha: {task}") # Ochrana proti chybám
     return np.array(x), np.array(y)
 
-# Vytvoření datasetů pro obě úlohy
+# Funkce pro rozdělení datasetu na trénovací, validační a testovací sadu
+def split_data(x, y, train_ratio=TRAIN_RATIO, val_ratio=VAL_RATIO, test_ratio=TEST_RATIO):
+    total_samples = len(x)
+
+    train_end = int(total_samples * train_ratio)
+    val_end = int(total_samples * (train_ratio + val_ratio))
+
+    x_train, y_train = x[:train_end], y[:train_end]
+    x_val, y_val = x[train_end:val_end], y[train_end:val_end]
+    x_test, y_test = x[val_end:], y[val_end:]
+
+    return (x_train, y_train), (x_val, y_val), (x_test, y_test)
+
+
+# Generování dat pro opakování sekvence
 x_repeat, y_repeat = generate_data(task="repeat")
+(train_x_repeat, train_y_repeat), (val_x_repeat, val_y_repeat), (test_x_repeat, test_y_repeat) = split_data(x_repeat, y_repeat)
+
+# Generování dat pro řazení sekvence
 x_sort, y_sort = generate_data(task="sort")
+(train_x_sort, train_y_sort), (val_x_sort, val_y_sort), (test_x_sort, test_y_sort) = split_data(x_sort, y_sort)
 
 # Funkce pro vytvoření datasetu
 def create_tf_dataset(x, y, batch_size=64):
+    x = np.expand_dims(x, -1)  # Ujistíme se, že TensorFlow má správný tvar
+    y = np.expand_dims(y, -1)
     dataset = tf.data.Dataset.from_tensor_slices((x, y))
     dataset = dataset.shuffle(10000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
     return dataset
 
-train_dataset_repeat = create_tf_dataset(x_repeat, y_repeat)
-train_dataset_sort = create_tf_dataset(x_sort, y_sort)
+# Vytvoření tf.data.Dataset pro všechny sady
+train_dataset_repeat = create_tf_dataset(train_x_repeat, train_y_repeat)
+val_dataset_repeat = create_tf_dataset(val_x_repeat, val_y_repeat)
+test_dataset_repeat = create_tf_dataset(test_x_repeat, test_y_repeat)
+
+train_dataset_sort = create_tf_dataset(train_x_sort, train_y_sort)
+val_dataset_sort = create_tf_dataset(val_x_sort, val_y_sort)
+test_dataset_sort = create_tf_dataset(test_x_sort, test_y_sort)
+
+print(f"Repeat task: Train: {len(train_x_repeat)}, Val: {len(val_x_repeat)}, Test: {len(test_x_repeat)}")
+print(f"Sort task: Train: {len(train_x_sort)}, Val: {len(val_x_sort)}, Test: {len(test_x_sort)}")
 
 # Implementace Positional Encoding vrstvy
 class PositionalEncoding(tf.keras.layers.Layer):
@@ -150,19 +184,23 @@ early_stopping_acc = EarlyStoppingByAccuracy(patience=5, threshold=1.0)
 # Funkce pro vykreslení tréninkové historie
 def plot_training_history(history, filename):
     plt.figure(figsize=(8, 6))
-    plt.plot(history.history['loss'], label='Loss')
-    plt.plot(history.history['accuracy'], label='Accuracy')
+
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.plot(history.history['accuracy'], label='Train Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
     plt.xlabel('Epochs')
     plt.ylabel('Hodnota')
     plt.legend()
-    plt.title('Trénovací křivka')
+    plt.title('Trénovací a validační křivka')
     plt.savefig(filename)
     plt.close()
 
+
 # Funkce pro trénování a uložení modelu a grafu
-def train_and_save_model(model, dataset, epochs, model_filename, plot_filename):
+def train_and_save_model(model, train_dataset, val_dataset, epochs, model_filename, plot_filename):
     callbacks_list = [early_stopping, csv_logger, reduce_lr, early_stopping_acc]
-    history = model.fit(dataset, epochs=epochs, callbacks=callbacks_list)
+    history = model.fit(train_dataset, validation_data=val_dataset, epochs=epochs, callbacks=callbacks_list)
     model.save(model_filename)
     plot_training_history(history, plot_filename)
     return history
@@ -170,9 +208,10 @@ def train_and_save_model(model, dataset, epochs, model_filename, plot_filename):
 # Trénování modelu pro opakování sekvence
 repeat_model = build_transformer_model(sequence_length=SEQUENCE_LENGTH, vocab_size=VOCAB_MAX, emb_dim=128, num_heads=4, ff_dim=512, num_layers=1)
 repeat_model.summary()
-history_repeat = train_and_save_model(repeat_model, train_dataset_repeat, epochs=15, model_filename="repeat_model.h5", plot_filename="repeat_training_plot.png")
+history_repeat = train_and_save_model(repeat_model, train_dataset_repeat, val_dataset_repeat, epochs=15, model_filename="repeat_model.h5", plot_filename="repeat_training_plot.png")
 
 # Trénování modelu pro řazení sekvence (s více Transformer bloky)
 sort_model = build_transformer_model(sequence_length=SEQUENCE_LENGTH, vocab_size=VOCAB_MAX, emb_dim=128, num_heads=4, ff_dim=512, num_layers=2)
 sort_model.summary()
-history_sort = train_and_save_model(sort_model, train_dataset_sort, epochs=1000, model_filename="sort_model.h5", plot_filename="sort_training_plot.png")
+history_sort = train_and_save_model(sort_model, train_dataset_sort, val_dataset_sort, epochs=50, model_filename="sort_model.h5", plot_filename="sort_training_plot.png")
+

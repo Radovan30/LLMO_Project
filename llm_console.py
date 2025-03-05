@@ -140,3 +140,5 @@ while True:
     print("Vstupní sekvence:  ", sequence)
     print("Model predikoval: ", predicted_sequence.tolist())
     print("--------------------------------------------\n")
+
+    # [18, 33, 10, 9, 44, 52, 34, 21, 17, 61]
