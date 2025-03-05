@@ -17,5 +17,5 @@ Tento projekt implementuje **Transformer modely** v TensorFlow pro **učení sek
 - **Použití TensorFlow pro optimalizovanou inference** pomocí `tf.function`.
 
 
-## packages in environment 
+## Packages in environment 
 pip install -r requirements.txt
